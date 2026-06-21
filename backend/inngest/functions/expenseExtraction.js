@@ -51,7 +51,7 @@ const expenseExtractionFunction = inngest.createFunction(
     const { trip_id, message_id, message_content } = event.data;
 
     console.log(
-      `[Expense Extraction] Processing message ${message_id} for trip ${trip_id}`
+      `[Expense Extraction] Processing message ${message_id} for trip ${trip_id}`,
     );
 
     // ---------------------------------------------------------
@@ -60,7 +60,7 @@ const expenseExtractionFunction = inngest.createFunction(
     const extracted = await step.run("extract-expenses-with-ai", async () => {
       if (!groq) {
         console.warn(
-          "[Expense Extraction] Groq client not available — GROQ_API_KEY not set"
+          "[Expense Extraction] Groq client not available — GROQ_API_KEY not set",
         );
         return { items: [], skipped: true };
       }
@@ -86,7 +86,7 @@ const expenseExtractionFunction = inngest.createFunction(
         } catch {
           console.error(
             "[Expense Extraction] Failed to parse AI response:",
-            responseText
+            responseText,
           );
           return { items: [], parseError: true };
         }
@@ -99,7 +99,7 @@ const expenseExtractionFunction = inngest.createFunction(
             : [];
 
         console.log(
-          `[Expense Extraction] AI found ${items.length} expense(s) in message`
+          `[Expense Extraction] AI found ${items.length} expense(s) in message`,
         );
         return { items, skipped: false };
       } catch (error) {
@@ -111,7 +111,7 @@ const expenseExtractionFunction = inngest.createFunction(
     // If no expenses found or extraction was skipped, exit early
     if (extracted.skipped || extracted.items.length === 0) {
       console.log(
-        `[Expense Extraction] No expenses to save for message ${message_id}`
+        `[Expense Extraction] No expenses to save for message ${message_id}`,
       );
       return {
         success: true,
@@ -140,7 +140,7 @@ const expenseExtractionFunction = inngest.createFunction(
       }));
 
       const { data, error } = await supabase
-        .from("extracted_expenses")
+        .from("expense_suggestions")
         .insert(expenseRows)
         .select("id");
 
@@ -149,9 +149,7 @@ const expenseExtractionFunction = inngest.createFunction(
         throw error; // Let Inngest retry
       }
 
-      console.log(
-        `[Expense Extraction] Saved ${data.length} expense(s) to DB`
-      );
+      console.log(`[Expense Extraction] Saved ${data.length} expense(s) to DB`);
       return { count: data.length, ids: data.map((r) => r.id) };
     });
 
@@ -168,7 +166,7 @@ const expenseExtractionFunction = inngest.createFunction(
         // Non-critical — log but don't fail the function
         console.warn(
           "[Expense Extraction] Could not mark message as processed:",
-          error.message
+          error.message,
         );
       }
     });
@@ -180,7 +178,7 @@ const expenseExtractionFunction = inngest.createFunction(
       expenses_found: saved.count,
       expense_ids: saved.ids,
     };
-  }
+  },
 );
 
 export default expenseExtractionFunction;
