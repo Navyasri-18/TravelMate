@@ -1,0 +1,198 @@
+@import "tailwindcss";
+
+@theme {
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+@layer base {
+  :root {
+    --background: 180 20% 98%;
+    --foreground: 200 50% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 200 50% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 200 50% 10%;
+    --primary: 27 28% 53%;
+    --primary-foreground: 180 20% 98%;
+    --secondary: 195 60% 95%;
+    --secondary-foreground: 195 80% 25%;
+    --muted: 195 20% 94%;
+    --muted-foreground: 195 10% 40%;
+    --accent: 175 70% 94%;
+    --accent-foreground: 175 80% 25%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 195 20% 88%;
+    --input: 195 20% 88%;
+    --ring: 175 80% 35%;
+    --radius: 1rem;
+  }
+
+  .dark {
+    --background: 200 50% 5%;
+    --foreground: 180 20% 98%;
+    --card: 200 50% 8%;
+    --card-foreground: 180 20% 98%;
+    --popover: 200 50% 8%;
+    --popover-foreground: 180 20% 98%;
+    --primary: 27 28% 60%;
+    --primary-foreground: 200 50% 5%;
+    --secondary: 200 40% 15%;
+    --secondary-foreground: 180 20% 98%;
+    --muted: 200 30% 15%;
+    --muted-foreground: 200 10% 60%;
+    --accent: 175 50% 20%;
+    --accent-foreground: 180 20% 98%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 180 20% 98%;
+    --border: 200 30% 20%;
+    --input: 200 30% 20%;
+    --ring: 175 80% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    /* Standard CSS for hiding scrollbar */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Standard CSS for hiding scrollbar globally */
+html, body, .no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar, 
+body::-webkit-scrollbar, 
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Glassmorphism utilities */
+.glass {
+  @apply bg-white/70 backdrop-blur-md border border-white/20;
+}
+
+.dark .glass {
+  @apply bg-black/40 backdrop-blur-md border border-white/10;
+}
+
+/* Animations */
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+/* Force browser autofill to be transparent to maintain glassmorphism */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active {
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: white !important;
+  transition: background-color 5000s ease-in-out 0s !important;
+  box-shadow: none !important;
+}
+
+/* Custom premium scrollbar for chat lists */
+.chat-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 10px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Soft Glow highlights */
+.glass-glow-accent {
+  box-shadow: 0 0 15px 1px rgba(169, 132, 103, 0.15);
+  border-color: rgba(169, 132, 103, 0.3) !important;
+}
+
+.glass-glow-green {
+  box-shadow: 0 0 20px 2px rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.3) !important;
+}
+
+.glass-glow-gold {
+  box-shadow: 0 0 20px 2px rgba(234, 179, 8, 0.2);
+  border-color: rgba(234, 179, 8, 0.3) !important;
+}
+
+.glow-hover:hover {
+  box-shadow: 0 0 20px 2px rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  transform: translateY(-2px);
+  transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Pulse Highlight for Scroll Target Message */
+@keyframes message-target-pulse {
+  0% {
+    box-shadow: 0 0 0 0px rgba(169, 132, 103, 0.5);
+    border-color: rgba(169, 132, 103, 0.9) !important;
+    transform: scale(1.02);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(169, 132, 103, 0);
+    border-color: rgba(169, 132, 103, 1) !important;
+    transform: scale(1.02);
+  }
+  100% {
+    box-shadow: 0 0 0 0px rgba(169, 132, 103, 0);
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    transform: scale(1);
+  }
+}
+
+.animate-message-pulse {
+  animation: message-target-pulse 1.2s cubic-bezier(0.25, 1, 0.5, 1) 2;
+}
+
+
