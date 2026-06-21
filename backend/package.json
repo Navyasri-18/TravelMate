@@ -1,0 +1,23 @@
+{
+  "name": "travelmate-backend",
+  "version": "1.0.0",
+  "description": "TravelMate Node.js backend — Express + Inngest for background AI processing",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "dev": "nodemon server.js",
+    "start": "node server.js",
+    "inngest:dev": "npx inngest-cli@latest dev -u http://localhost:8080/api/inngest"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "groq-sdk": "^0.9.1",
+    "inngest": "^3.31.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
