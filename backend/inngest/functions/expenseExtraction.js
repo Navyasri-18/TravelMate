@@ -25,7 +25,8 @@ import { supabase } from "../../config/supabaseClient.js";
 const EXTRACTION_SYSTEM_PROMPT = `You are an expense extraction assistant for a travel app.
 Given a chat message, extract any expense or cost information mentioned.
 
-Return a JSON array of expense objects. Each object should have:
+Return a JSON object with a single key "expenses" whose value is an array of expense objects.
+Each expense object should have:
 - "description": short description of the expense (string)
 - "amount": the total amount in numbers only (number)
 - "currency": the currency code, default "USD" if not specified (string)
@@ -33,10 +34,10 @@ Return a JSON array of expense objects. Each object should have:
 - "split_count": number of people splitting, if mentioned (number or null)
 - "per_person": amount per person if split is mentioned (number or null)
 
-If no expenses are found in the message, return an empty array: []
+If no expenses are found in the message, return: {"expenses": []}
 
 IMPORTANT:
-- Only return the JSON array, no other text
+- Only return the JSON object described above, no other text
 - Parse amounts carefully — "$45 split 3 ways" means amount=45, split_count=3, per_person=15
 - Handle various formats: "$45", "45 dollars", "€30", "30 EUR", etc.`;
 
@@ -53,6 +54,38 @@ const expenseExtractionFunction = inngest.createFunction(
     console.log(
       `[Expense Extraction] Processing message ${message_id} for trip ${trip_id}`,
     );
+
+    // ---------------------------------------------------------
+    // Step 0: Fetch the trip's authoritative currency from Supabase
+    // ---------------------------------------------------------
+    const tripCurrency = await step.run("fetch-trip-currency", async () => {
+      const { data, error } = await supabase
+        .from("trips")
+        .select("currency")
+        .eq("id", trip_id)
+        .single();
+
+      if (error || !data) {
+        console.error(
+          "[Expense Extraction] Failed to fetch trip currency for trip",
+          trip_id,
+          error?.message,
+        );
+        throw new Error(
+          `Could not fetch currency for trip ${trip_id}: ${error?.message ?? "no data"}`,
+        );
+      }
+
+      const currency = data.currency;
+      if (currency !== "INR" && currency !== "USD") {
+        throw new Error(
+          `Unexpected currency value "${currency}" for trip ${trip_id} — expected "INR" or "USD"`,
+        );
+      }
+
+      console.log(`[Expense Extraction] Trip ${trip_id} currency: ${currency}`);
+      return currency;
+    });
 
     // ---------------------------------------------------------
     // Step 1: Extract expenses from message using Groq AI
@@ -126,12 +159,17 @@ const expenseExtractionFunction = inngest.createFunction(
     // Step 2: Save extracted expenses to Supabase
     // ---------------------------------------------------------
     const saved = await step.run("save-expenses-to-db", async () => {
+      // NOTE: split_count and per_person_amount are extracted from the message and stored
+      // here for informational purposes, but they are NOT consumed by the approval flow.
+      // approve_expense_suggestion (a Postgres RPC) performs an equal split among all
+      // trip members regardless of these values — this is a deliberate v1 scope decision,
+      // not a bug. source_message_id is stored to link each suggestion back to its origin.
       const expenseRows = extracted.items.map((item) => ({
         trip_id,
         source_message_id: message_id,
         description: item.description || "Unnamed expense",
         amount: Number(item.amount) || 0,
-        currency: item.currency || "USD",
+        currency: tripCurrency, // always use the trip's own currency, never the model's guess
         category: item.category || "other",
         split_count: item.split_count || null,
         per_person_amount: item.per_person || null,
