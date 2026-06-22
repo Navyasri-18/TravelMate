@@ -56,38 +56,6 @@ const expenseExtractionFunction = inngest.createFunction(
     );
 
     // ---------------------------------------------------------
-    // Step 0: Fetch the trip's authoritative currency from Supabase
-    // ---------------------------------------------------------
-    const tripCurrency = await step.run("fetch-trip-currency", async () => {
-      const { data, error } = await supabase
-        .from("trips")
-        .select("currency")
-        .eq("id", trip_id)
-        .single();
-
-      if (error || !data) {
-        console.error(
-          "[Expense Extraction] Failed to fetch trip currency for trip",
-          trip_id,
-          error?.message,
-        );
-        throw new Error(
-          `Could not fetch currency for trip ${trip_id}: ${error?.message ?? "no data"}`,
-        );
-      }
-
-      const currency = data.currency;
-      if (currency !== "INR" && currency !== "USD") {
-        throw new Error(
-          `Unexpected currency value "${currency}" for trip ${trip_id} — expected "INR" or "USD"`,
-        );
-      }
-
-      console.log(`[Expense Extraction] Trip ${trip_id} currency: ${currency}`);
-      return currency;
-    });
-
-    // ---------------------------------------------------------
     // Step 1: Extract expenses from message using Groq AI
     // ---------------------------------------------------------
     const extracted = await step.run("extract-expenses-with-ai", async () => {
@@ -159,22 +127,15 @@ const expenseExtractionFunction = inngest.createFunction(
     // Step 2: Save extracted expenses to Supabase
     // ---------------------------------------------------------
     const saved = await step.run("save-expenses-to-db", async () => {
-      // NOTE: split_count and per_person_amount are extracted from the message and stored
-      // here for informational purposes, but they are NOT consumed by the approval flow.
-      // approve_expense_suggestion (a Postgres RPC) performs an equal split among all
-      // trip members regardless of these values — this is a deliberate v1 scope decision,
-      // not a bug. source_message_id is stored to link each suggestion back to its origin.
+      // NOTE: We map to correct columns for the expense_suggestions table:
+      // trip_id, message_id, suggested_description, suggested_amount, suggested_category.
+      // status defaults to 'pending' in database, and currency/splits are omitted.
       const expenseRows = extracted.items.map((item) => ({
         trip_id,
-        source_message_id: message_id,
-        description: item.description || "Unnamed expense",
-        amount: Number(item.amount) || 0,
-        currency: tripCurrency, // always use the trip's own currency, never the model's guess
-        category: item.category || "other",
-        split_count: item.split_count || null,
-        per_person_amount: item.per_person || null,
-        extraction_status: "extracted",
-        created_at: new Date().toISOString(),
+        message_id,
+        suggested_description: item.description || "Unnamed expense",
+        suggested_amount: Number(item.amount) || 0,
+        suggested_category: item.category || "other",
       }));
 
       const { data, error } = await supabase
@@ -194,6 +155,9 @@ const expenseExtractionFunction = inngest.createFunction(
     // ---------------------------------------------------------
     // Step 3: Update the original message to mark it as processed
     // ---------------------------------------------------------
+    // NOTE: Commented out because the messages table doesn't have an expense_extracted column yet.
+    // Ayemen will add the column in a future schema migration.
+    /*
     await step.run("mark-message-processed", async () => {
       const { error } = await supabase
         .from("messages")
@@ -208,6 +172,7 @@ const expenseExtractionFunction = inngest.createFunction(
         );
       }
     });
+    */
 
     return {
       success: true,
