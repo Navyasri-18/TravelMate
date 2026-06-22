@@ -12,6 +12,7 @@ import { useDeleteExpense } from '@/hooks/useDeleteExpense';
 import { DeleteExpenseDialog } from '@/components/modals/DeleteExpenseDialog';
 import { ExpenseDetailModal } from '@/components/modals/ExpenseDetailModal';
 import { BalancesSummary } from '@/components/expenses/BalancesSummary';
+import { TripExpenseSuggestions } from '@/features/expense-suggestions/TripExpenseSuggestions';
 import type { Expense } from '@/types/expense';
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -151,6 +152,13 @@ export default function ExpensesPage() {
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-8 chat-scrollbar">
           <div className="max-w-2xl mx-auto">
+            <div className="mb-6">
+              <TripExpenseSuggestions
+                tripId={id || ''}
+                tripCurrency={activeCurrency}
+                isAdmin={trip.admin_id === currentUserId}
+              />
+            </div>
             {expensesLoading ? (
               <div className="flex items-center justify-center py-20">
                 <div className="h-8 w-8 rounded-full border-2 border-[#a98467]/30 border-t-[#a98467] animate-spin" />
