@@ -157,6 +157,8 @@ export default function ExpensesPage() {
                 tripId={id || ''}
                 tripCurrency={activeCurrency}
                 isAdmin={trip.admin_id === currentUserId}
+                members={members}
+                currentUserId={currentUserId}
               />
             </div>
             {expensesLoading ? (

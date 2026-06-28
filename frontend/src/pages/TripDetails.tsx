@@ -90,6 +90,86 @@ export default function TripDetails() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Mention-picker and custom split validation states
+  const [mentionSearch, setMentionSearch] = useState<string | null>(null);
+  const [mentionIndex, setMentionIndex] = useState<number>(-1);
+  const [activeSuggestIndex, setActiveSuggestIndex] = useState(0);
+  const [splitError, setSplitError] = useState<string | null>(null);
+
+  const filteredMembers = members.filter(m => {
+    const name = m.profile?.name || '';
+    return name.toLowerCase().includes((mentionSearch || '').toLowerCase());
+  });
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setMessageText(val);
+    setSplitError(null); // Clear split error on type
+    
+    const cursor = e.target.selectionStart || 0;
+    const textBefore = val.slice(0, cursor);
+    const lastAt = textBefore.lastIndexOf('@');
+    
+    if (lastAt !== -1) {
+      const textAfterAt = textBefore.slice(lastAt + 1);
+      // Check if there are spaces in the search term. Mentions shouldn't contain spaces before search.
+      if (!textAfterAt.includes(' ')) {
+        setMentionSearch(textAfterAt);
+        setMentionIndex(lastAt);
+        setActiveSuggestIndex(0);
+        return;
+      }
+    }
+    
+    setMentionSearch(null);
+    setMentionIndex(-1);
+  };
+
+  const handleSelectMember = (member: typeof members[0]) => {
+    if (mentionIndex === -1 || !inputRef.current) return;
+    const val = messageText;
+    const cursor = inputRef.current.selectionStart || 0;
+    
+    const beforeAt = val.slice(0, mentionIndex);
+    const afterCursor = val.slice(cursor);
+    
+    // Format token: @[Name](id:user_id) 
+    const token = `@[${member.profile?.name || 'User'}](id:${member.user_id}) `;
+    const newVal = beforeAt + token + afterCursor;
+    
+    setMessageText(newVal);
+    setMentionSearch(null);
+    setMentionIndex(-1);
+    
+    // Refocus input and set cursor position after the token
+    const newCursorPos = mentionIndex + token.length;
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 0);
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (mentionSearch !== null && filteredMembers.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveSuggestIndex(prev => (prev + 1) % filteredMembers.length);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveSuggestIndex(prev => (prev - 1 + filteredMembers.length) % filteredMembers.length);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSelectMember(filteredMembers[activeSuggestIndex]);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setMentionSearch(null);
+        setMentionIndex(-1);
+      }
+    }
+  };
+
   // Message actions menu state
   const [activeMenu, setActiveMenu] = useState<{
     messageId: string;
@@ -288,6 +368,85 @@ export default function TripDetails() {
     if (sendMutation.isPending || uploadMutation.isPending) return;
     if (!currentUserId || !id) return;
     
+    // Parse and validate custom splits
+    const mentionRegex = /@\[([^\]]+)\]\(id:([^)]+)\)\s*(\d+(?:\.\d+)?)/g;
+    const matches = [...trimmed.matchAll(mentionRegex)];
+    let shares: { user_id: string; amount: number }[] | null = null;
+    
+    if (matches.length > 0) {
+      const cleanContent = trimmed.replace(/@\[[^\]]+\]\(id:[^)]+\)\s*\d+(?:\.\d+)?/g, '');
+      const totalMatch = cleanContent.match(/\b\d+(?:\.\d+)?\b/);
+      if (!totalMatch) {
+        setSplitError("Could not detect the total expense amount. Please include the total amount (e.g. 4000).");
+        return;
+      }
+      
+      const total = Math.round(parseFloat(totalMatch[0]) * 100) / 100;
+      const memberIds = new Set(members.map(m => m.user_id));
+      let namedSum = 0;
+      const namedShares: { user_id: string; amount: number }[] = [];
+      let payerExplicitlyMentioned = false;
+      
+      const CURRENCY_SYMBOLS: Record<string, string> = {
+        INR: '₹',
+        USD: '$',
+        EUR: '€',
+        GBP: '£',
+        JPY: '¥',
+      };
+      const tripCurrency = trip?.currency || 'INR';
+      const currencySymbol = CURRENCY_SYMBOLS[tripCurrency] || tripCurrency;
+      
+      for (const match of matches) {
+        const name = match[1];
+        const userId = match[2];
+        const amount = Math.round(parseFloat(match[3]) * 100) / 100;
+        
+        if (!memberIds.has(userId)) {
+          setSplitError(`${name} isn't a member of this trip.`);
+          return;
+        }
+        
+        if (amount < 0) {
+          setSplitError("Split amounts can't be negative.");
+          return;
+        }
+        
+        if (userId === currentUserId) {
+          payerExplicitlyMentioned = true;
+        }
+        
+        namedShares.push({ user_id: userId, amount });
+        namedSum += amount;
+      }
+      
+      namedSum = Math.round(namedSum * 100) / 100;
+      
+      if (namedSum > total) {
+        setSplitError(`Split adds up to ${currencySymbol}${namedSum}, but the expense is ${currencySymbol}${total}.`);
+        return;
+      }
+      
+      const payerShare = Math.round((total - namedSum) * 100) / 100;
+      
+      if (payerExplicitlyMentioned) {
+        if (Math.abs(namedSum - total) > 0.01) {
+          setSplitError(`Split adds up to ${currencySymbol}${namedSum}, but the expense is ${currencySymbol}${total}.`);
+          return;
+        }
+        shares = namedShares;
+      } else {
+        if (payerShare < 0) {
+          setSplitError(`Split adds up to ${currencySymbol}${namedSum}, but the expense is ${currencySymbol}${total}.`);
+          return;
+        }
+        shares = [...namedShares];
+        if (payerShare > 0) {
+          shares.push({ user_id: currentUserId, amount: payerShare });
+        }
+      }
+    }
+    
     // Snapshot text/file/reply before clearing inputs
     const textToSend = trimmed;
     const fileToSend = selectedFile;
@@ -297,6 +456,7 @@ export default function TripDetails() {
     setMessageText('');
     setSelectedFile(null);
     setReplyingToId(null); // clear reply banner on send
+    setSplitError(null);
     inputRef.current?.focus();
     
     try {
@@ -314,9 +474,9 @@ export default function TripDetails() {
         attachmentUrl,
         senderProfile: currentUserProfile,
         replyToMessageId: replyTo,
+        shares,
       });
     } catch (err) {
-      // The optimistic update was already rolled back by useSendMessage.onError
       // Restore the inputs so the user can retry
       setMessageText(textToSend);
       setSelectedFile(fileToSend);
@@ -603,11 +763,45 @@ export default function TripDetails() {
             )}
           </AnimatePresence>
           
+          {splitError && (
+            <div className="text-xs text-red-400 px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-xl mb-3 w-full max-w-[70%] mx-auto flex items-center justify-between">
+              <span>{splitError}</span>
+              <button type="button" onClick={() => setSplitError(null)} className="text-red-400 hover:text-white shrink-0">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+
           {/* Input row */}
           <div className={cn(
             "relative flex items-center bg-white/5 backdrop-blur-xl border border-white/10 rounded-full px-3 py-2 transition-all shadow-[0_8px_32px_0_rgba(0,0,0,0.2)] w-full max-w-[70%] mx-auto",
             "focus-within:border-[#a98467]/50 focus-within:shadow-[0_0_25px_rgba(169,132,103,0.25)] focus-within:bg-[#a98467]/5"
           )}>
+            {/* Autocomplete Dropdown */}
+            {mentionSearch !== null && filteredMembers.length > 0 && (
+              <div className="absolute bottom-full mb-2 left-0 right-0 max-h-48 overflow-y-auto bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-xl z-50 py-1.5 flex flex-col chat-scrollbar">
+                {filteredMembers.map((m, idx) => (
+                  <button
+                    key={m.user_id}
+                    type="button"
+                    onClick={() => handleSelectMember(m)}
+                    className={cn(
+                      "w-full px-4 py-2 flex items-center gap-2 text-left text-sm text-[#f5f5f5] hover:bg-white/5 transition-colors cursor-pointer",
+                      idx === activeSuggestIndex && "bg-white/10"
+                    )}
+                  >
+                    <Avatar
+                      avatarUrl={m.profile?.avatar_url || undefined}
+                      name={m.profile?.name || 'User'}
+                      size="xs"
+                      className="shrink-0"
+                    />
+                    <span className="truncate">{m.profile?.name || 'User'}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Attachment button */}
             <button
               type="button"
@@ -624,7 +818,8 @@ export default function TripDetails() {
               ref={inputRef}
               type="text"
               value={messageText}
-              onChange={(e) => setMessageText(e.target.value)}
+              onChange={handleInputChange}
+              onKeyDown={handleInputKeyDown}
               placeholder={selectedFile ? "Add a caption (optional)..." : "Type a message..."}
               disabled={sendMutation.isPending || uploadMutation.isPending}
               maxLength={2000}

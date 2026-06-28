@@ -22,6 +22,7 @@ interface SendMessageInput {
   content: string;
   attachmentUrl?: string | null;
   replyToMessageId?: string | null;
+  shares?: { user_id: string; amount: number }[] | null;
 }
 
 export const sendMessage = async (input: SendMessageInput): Promise<void> => {
@@ -44,6 +45,7 @@ export const sendMessage = async (input: SendMessageInput): Promise<void> => {
       content: trimmed,
       attachment_url: input.attachmentUrl || null,
       reply_to_message_id: input.replyToMessageId || null,
+      shares: input.shares || null,
     });
 
   if (error) {

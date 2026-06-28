@@ -59,6 +59,7 @@ export interface ExpenseSuggestion {
   perPerson: number | null;
   status: SuggestionStatus;
   createdAt: string; // ISO timestamp
+  shares?: { user_id: string; amount: number }[] | null;
 }
 
 export interface ExpenseSuggestionCardProps {
@@ -67,6 +68,8 @@ export interface ExpenseSuggestionCardProps {
   onReject: (id: string) => Promise<void> | void;
   isAdmin?: boolean;
   className?: string;
+  members?: { user_id: string; profile: { name: string } | null }[];
+  currentUserId?: string;
 }
 
 const CATEGORY_META: Record<
@@ -111,6 +114,8 @@ export function ExpenseSuggestionCard({
   onReject,
   isAdmin = false,
   className,
+  members,
+  currentUserId,
 }: ExpenseSuggestionCardProps) {
   const [pending, setPending] = useState<"approve" | "reject" | null>(null);
 
@@ -130,6 +135,16 @@ export function ExpenseSuggestionCard({
     CATEGORY_META[category] ?? CATEGORY_META.other;
   const split = splitLabel(splitCount, perPerson, currency);
   const busy = pending !== null;
+
+  const sharesBreakdown = (() => {
+    if (!suggestion.shares || !members) return null;
+    const formatted = suggestion.shares.map((s) => {
+      const isPayer = currentUserId && s.user_id === currentUserId;
+      const name = isPayer ? "You" : (members.find((m) => m.user_id === s.user_id)?.profile?.name || "Unknown");
+      return `${name} ${formatCurrency(s.amount, currency)}`;
+    });
+    return formatted.join(" · ");
+  })();
 
   async function handle(action: "approve" | "reject") {
     if (busy) return;
@@ -190,7 +205,7 @@ export function ExpenseSuggestionCard({
               </span>
               <span className="text-muted-foreground">·</span>
               <span className="text-muted-foreground">{categoryLabel}</span>
-              {split && (
+              {split && !sharesBreakdown && (
                 <>
                   <span className="text-muted-foreground">·</span>
                   <span className="inline-flex items-center gap-1 text-muted-foreground">
@@ -200,6 +215,15 @@ export function ExpenseSuggestionCard({
                 </>
               )}
             </div>
+
+            {sharesBreakdown && (
+              <div className="mt-2 text-[11px] text-muted-foreground flex items-center gap-1.5 bg-muted/40 px-2 py-1 rounded-md border border-border/40 w-fit">
+                <Users className="size-3 text-muted-foreground/75 shrink-0" />
+                <span className="truncate" title={sharesBreakdown}>
+                  {sharesBreakdown}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 

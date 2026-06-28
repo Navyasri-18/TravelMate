@@ -9,12 +9,16 @@ interface TripExpenseSuggestionsProps {
   tripId: string;
   tripCurrency: string;
   isAdmin?: boolean;
+  members?: { user_id: string; profile: { name: string } | null }[];
+  currentUserId?: string;
 }
 
 export function TripExpenseSuggestions({
   tripId,
   tripCurrency,
   isAdmin = false,
+  members,
+  currentUserId,
 }: TripExpenseSuggestionsProps) {
   const { suggestions, isLoading, isError, refetch, approve, reject } =
     useExpenseSuggestions(tripId, tripCurrency);
@@ -57,6 +61,8 @@ export function TripExpenseSuggestions({
             isAdmin={isAdmin}
             onApprove={approve}
             onReject={reject}
+            members={members}
+            currentUserId={currentUserId}
           />
         ))}
       </AnimatePresence>

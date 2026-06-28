@@ -59,5 +59,8 @@ export function mapRowToSuggestion(
     perPerson: null,
     status: toStatus(row.status),
     createdAt: row.created_at,
+    shares: Array.isArray(row.suggested_shares)
+      ? (row.suggested_shares as { user_id: string; amount: number }[])
+      : null,
   };
 }
