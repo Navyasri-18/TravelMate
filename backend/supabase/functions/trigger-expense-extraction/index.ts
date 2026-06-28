@@ -13,7 +13,7 @@ serve(async (req) => {
 
     const payload = await req.json()
 
-    // 2. PAYLOAD MAPPING: Supabase webhooks wrap the row data in a 'record' object
+// 2. PAYLOAD MAPPING: Extract row records from the native database trigger payload
     const record = payload.record
     if (!record) {
       return new Response(JSON.stringify({ error: "Invalid webhook payload" }), { status: 400 })
@@ -22,20 +22,26 @@ serve(async (req) => {
     const trip_id = record.trip_id
     const message_id = record.id
     const message_content = record.content
+    const shares = record.shares || null // Gracefully intercept the optional array tracking field
 
-    // 3. FILTERING: Skip deleted messages, system messages, or image-only messages (no text)
+    // 3. FILTERING: Fast return on dropped or structural updates
     if (record.deleted_at !== null || !message_content || message_content.trim() === '') {
       console.log(`Skipping extraction for message ${message_id}: Empty or deleted.`)
       return new Response(JSON.stringify({ skipped: true, reason: "Message deleted or no text content" }), { status: 200 })
     }
 
-    // 4. FIRE INNGEST
+    // 4. EMIT DIRECT TO INNGEST EVENT ROUTER
     const response = await fetch(`https://inn.gs/e/${INNGEST_EVENT_KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: "app/expense.extraction.triggered",
-        data: { trip_id, message_id, message_content }
+        data: { 
+          trip_id, 
+          message_id, 
+          message_content, 
+          shares: shares || null
+        }
       })
     })
 
