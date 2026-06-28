@@ -49,7 +49,7 @@ const expenseExtractionFunction = inngest.createFunction(
   },
   { event: "app/expense.extraction.triggered" },
   async ({ event, step }) => {
-    const { trip_id, message_id, message_content } = event.data;
+    const { trip_id, message_id, message_content, shares } = event.data;
 
     console.log(
       `[Expense Extraction] Processing message ${message_id} for trip ${trip_id}`,
@@ -130,12 +130,16 @@ const expenseExtractionFunction = inngest.createFunction(
       // NOTE: We map to correct columns for the expense_suggestions table:
       // trip_id, message_id, suggested_description, suggested_amount, suggested_category.
       // status defaults to 'pending' in database, and currency/splits are omitted.
+      const hasShares = Array.isArray(shares) && shares.length > 0;
       const expenseRows = extracted.items.map((item) => ({
         trip_id,
         message_id,
         suggested_description: item.description || "Unnamed expense",
-        suggested_amount: Number(item.amount) || 0,
+        suggested_amount: hasShares
+          ? shares.reduce((sum, s) => sum + (Number(s.amount) || 0), 0)
+          : (Number(item.amount) || 0),
         suggested_category: item.category || "other",
+        suggested_shares: hasShares ? shares : null,
       }));
 
       const { data, error } = await supabase
