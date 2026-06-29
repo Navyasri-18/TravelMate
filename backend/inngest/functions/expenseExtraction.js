@@ -124,23 +124,64 @@ const expenseExtractionFunction = inngest.createFunction(
     }
 
     // ---------------------------------------------------------
-    // Step 2: Save extracted expenses to Supabase
+    // Step 2: Fetch message sender (always the payer)
+    // ---------------------------------------------------------
+    const payerId = await step.run("fetch-message-sender", async () => {
+      const { data: msg, error } = await supabase
+        .from("messages")
+        .select("sender_id")
+        .eq("id", message_id)
+        .single();
+
+      if (error) {
+        console.warn(
+          "[Expense Extraction] Could not fetch sender_id:",
+          error.message,
+        );
+        return null;
+      }
+      return msg?.sender_id ?? null;
+    });
+
+    // ---------------------------------------------------------
+    // Step 3: Save extracted expenses to Supabase
     // ---------------------------------------------------------
     const saved = await step.run("save-expenses-to-db", async () => {
-      // NOTE: We map to correct columns for the expense_suggestions table:
-      // trip_id, message_id, suggested_description, suggested_amount, suggested_category.
-      // status defaults to 'pending' in database, and currency/splits are omitted.
       const hasShares = Array.isArray(shares) && shares.length > 0;
-      const expenseRows = extracted.items.map((item) => ({
-        trip_id,
-        message_id,
-        suggested_description: item.description || "Unnamed expense",
-        suggested_amount: hasShares
-          ? shares.reduce((sum, s) => sum + (Number(s.amount) || 0), 0)
-          : (Number(item.amount) || 0),
-        suggested_category: item.category || "other",
-        suggested_shares: hasShares ? shares : null,
-      }));
+
+      let expenseRows;
+
+      if (hasShares) {
+        // Custom split: insert exactly ONE row with summed amount and full shares array.
+        // Sender is always the payer; ignore the AI's per-item breakdown.
+        const totalAmount = shares.reduce(
+          (sum, s) => sum + (Number(s.amount) || 0),
+          0,
+        );
+        expenseRows = [
+          {
+            trip_id,
+            message_id,
+            suggested_description:
+              extracted.items[0]?.description || "Shared expense",
+            suggested_amount: totalAmount,
+            suggested_category: extracted.items[0]?.category || "other",
+            suggested_shares: shares,
+            suggested_payer_id: payerId,
+          },
+        ];
+      } else {
+        // Equal/no split: one row per AI-extracted item (existing behaviour).
+        expenseRows = extracted.items.map((item) => ({
+          trip_id,
+          message_id,
+          suggested_description: item.description || "Unnamed expense",
+          suggested_amount: Number(item.amount) || 0,
+          suggested_category: item.category || "other",
+          suggested_shares: null,
+          suggested_payer_id: payerId,
+        }));
+      }
 
       const { data, error } = await supabase
         .from("expense_suggestions")
