@@ -112,8 +112,10 @@ export default function TripDetails() {
     
     if (lastAt !== -1) {
       const textAfterAt = textBefore.slice(lastAt + 1);
-      // Check if there are spaces in the search term. Mentions shouldn't contain spaces before search.
-      if (!textAfterAt.includes(' ')) {
+      // Keep the mention dropdown open while the user types a (possibly multi-word)
+      // member name. Close it only once they start the amount (a digit) or a newline,
+      // so names like "Shaik Ayemen" can be searched and selected.
+      if (!/[\d\n]/.test(textAfterAt)) {
         setMentionSearch(textAfterAt);
         setMentionIndex(lastAt);
         setActiveSuggestIndex(0);

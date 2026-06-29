@@ -5,32 +5,33 @@ const WEBHOOK_SECRET = Deno.env.get("WEBHOOK_SECRET")
 
 serve(async (req) => {
   try {
-    // 1. SECURITY: Verify this is our internal database webhook calling
+    // 1. SECURITY: Verify internal caller
     const secretHeader = req.headers.get('x-webhook-secret')
     if (secretHeader !== WEBHOOK_SECRET) {
       return new Response(JSON.stringify({ error: "Unauthorized caller" }), { status: 401 })
     }
 
     const payload = await req.json()
-
-// 2. PAYLOAD MAPPING: Extract row records from the native database trigger payload
     const record = payload.record
     if (!record) {
       return new Response(JSON.stringify({ error: "Invalid webhook payload" }), { status: 400 })
     }
 
+    // 2. PAYLOAD MAPPING: Extract the message details
     const trip_id = record.trip_id
     const message_id = record.id
     const message_content = record.content
-    const shares = record.shares || null // Gracefully intercept the optional array tracking field
+    const shares = record.shares || null
+    
+    // CUSTOM PAYER UPGRADE: Capture the parsed mention payer from the message row
+    const payer_id = record.payer_id || record.suggested_payer_id || null
 
-    // 3. FILTERING: Fast return on dropped or structural updates
+    // 3. FILTERING: Early-exit check
     if (record.deleted_at !== null || !message_content || message_content.trim() === '') {
-      console.log(`Skipping extraction for message ${message_id}: Empty or deleted.`)
-      return new Response(JSON.stringify({ skipped: true, reason: "Message deleted or no text content" }), { status: 200 })
+      return new Response(JSON.stringify({ skipped: true, reason: "Empty or deleted message" }), { status: 200 })
     }
 
-    // 4. EMIT DIRECT TO INNGEST EVENT ROUTER
+    // 4. FIRE INNGEST PAYLOAD
     const response = await fetch(`https://inn.gs/e/${INNGEST_EVENT_KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -40,7 +41,8 @@ serve(async (req) => {
           trip_id, 
           message_id, 
           message_content, 
-          shares: shares || null
+          shares, 
+          payer_id
         }
       })
     })

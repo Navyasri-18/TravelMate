@@ -62,5 +62,6 @@ export function mapRowToSuggestion(
     shares: Array.isArray(row.suggested_shares)
       ? (row.suggested_shares as { user_id: string; amount: number }[])
       : null,
+    payerId: row.suggested_payer_id ?? null,
   };
 }

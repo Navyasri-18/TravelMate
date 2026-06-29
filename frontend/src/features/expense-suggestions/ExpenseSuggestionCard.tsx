@@ -60,6 +60,7 @@ export interface ExpenseSuggestion {
   status: SuggestionStatus;
   createdAt: string; // ISO timestamp
   shares?: { user_id: string; amount: number }[] | null;
+  payerId?: string | null;
 }
 
 export interface ExpenseSuggestionCardProps {
@@ -136,14 +137,60 @@ export function ExpenseSuggestionCard({
   const split = splitLabel(splitCount, perPerson, currency);
   const busy = pending !== null;
 
-  const sharesBreakdown = (() => {
-    if (!suggestion.shares || !members) return null;
-    const formatted = suggestion.shares.map((s) => {
-      const isPayer = currentUserId && s.user_id === currentUserId;
-      const name = isPayer ? "You" : (members.find((m) => m.user_id === s.user_id)?.profile?.name || "Unknown");
-      return `${name} ${formatCurrency(s.amount, currency)}`;
+  const { summaryLine, sharesBreakdown } = (() => {
+    if (!suggestion.shares || !members) return { summaryLine: null, sharesBreakdown: null };
+
+    // Fallback to flat join if payerId is missing
+    if (!suggestion.payerId) {
+      const formatted = suggestion.shares.map((s) => {
+        const isPayer = currentUserId && s.user_id === currentUserId;
+        const name = isPayer ? "You" : (members.find((m) => m.user_id === s.user_id)?.profile?.name || "Unknown");
+        return `${name} ${formatCurrency(s.amount, currency)}`;
+      });
+      return {
+        summaryLine: null,
+        sharesBreakdown: formatted.join(" · ")
+      };
+    }
+
+    const isViewerPayer = currentUserId === suggestion.payerId;
+    const viewerShare = suggestion.shares.find((s) => s.user_id === currentUserId);
+    const viewerOwes = viewerShare ? viewerShare.amount : 0;
+
+    // Calculate sum of others' shares (excluding the payer's portion)
+    const othersSharesSum = suggestion.shares
+      .filter((s) => s.user_id !== suggestion.payerId)
+      .reduce((sum, s) => sum + s.amount, 0);
+
+    // 1. One-line summary
+    let summary: string | null = null;
+    if (isViewerPayer) {
+      summary = `You're owed ${formatCurrency(othersSharesSum, currency)}`;
+    } else if (viewerOwes > 0) {
+      summary = `You owe ${formatCurrency(viewerOwes, currency)}`;
+    }
+
+    // 2. Per-person list (excluding the payer's own portion)
+    const owesLines: string[] = [];
+    
+    // Sort so "You" comes first in the breakdown list
+    const sortedShares = [...suggestion.shares]
+      .filter((s) => s.user_id !== suggestion.payerId);
+
+    sortedShares.forEach((s) => {
+      const isSelf = currentUserId && s.user_id === currentUserId;
+      if (isSelf) {
+        owesLines.push(`You owe ${formatCurrency(s.amount, currency)}`);
+      } else {
+        const name = members.find((m) => m.user_id === s.user_id)?.profile?.name || "Unknown";
+        owesLines.push(`${name} owes ${formatCurrency(s.amount, currency)}`);
+      }
     });
-    return formatted.join(" · ");
+
+    return {
+      summaryLine: summary,
+      sharesBreakdown: owesLines.length > 0 ? owesLines.join(" · ") : null
+    };
   })();
 
   async function handle(action: "approve" | "reject") {
@@ -215,6 +262,12 @@ export function ExpenseSuggestionCard({
                 </>
               )}
             </div>
+
+            {summaryLine && (
+              <p className="mt-1.5 text-xs font-semibold text-foreground">
+                {summaryLine}
+              </p>
+            )}
 
             {sharesBreakdown && (
               <div className="mt-2 text-[11px] text-muted-foreground flex items-center gap-1.5 bg-muted/40 px-2 py-1 rounded-md border border-border/40 w-fit">

@@ -87,10 +87,9 @@ export function useExpenseSuggestions(tripId: string, tripCurrency: string) {
     qc.setQueryData<ExpenseSuggestion[]>(key, (p = []) =>
       p.filter((s) => s.id !== id),
     );
-    const { error } = await supabase
-      .from("expense_suggestions")
-      .update({ status: "rejected" })
-      .eq("id", id);
+    const { error } = await supabase.rpc("reject_expense_suggestion", {
+      suggestion_id: id,
+    });
     if (error) {
       qc.setQueryData(key, prev);
       toast.error(`Couldn't reject: ${error.message}`);
