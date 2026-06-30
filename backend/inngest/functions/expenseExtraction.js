@@ -25,10 +25,21 @@ import { supabase } from "../../config/supabaseClient.js";
 const EXTRACTION_SYSTEM_PROMPT = `You are an expense extraction assistant for a travel app.
 Given a chat message, extract any expense or cost information mentioned.
 
+IMPORTANT — single transaction vs multiple expenses:
+A message describing ONE payment with amounts attributed to specific people
+(e.g. "I paid 4500 for food, @Ayemen owes 2300, @Tej owes 1200") describes
+ONE transaction with a breakdown of who owes what — NOT three separate
+expenses. In this case, return exactly ONE expense object representing the
+total payment, and do not create separate line items for each named amount.
+Only return multiple expense objects if the message genuinely describes
+multiple distinct purchases (e.g. "paid 500 for lunch and 200 for a taxi").
+
 Return a JSON object with a single key "expenses" whose value is an array of expense objects.
 Each expense object should have:
 - "description": short description of the expense (string)
-- "amount": the total amount in numbers only (number)
+- "amount": the TOTAL amount of the transaction in numbers only (number) — if the
+  message names specific people and amounts, this should be the sum of those
+  amounts, not any single named amount
 - "currency": the currency code, default "USD" if not specified (string)
 - "category": one of "food", "transport", "accommodation", "activities", "shopping", "other" (string)
 - "split_count": number of people splitting, if mentioned (number or null)
@@ -38,6 +49,8 @@ If no expenses are found in the message, return: {"expenses": []}
 
 IMPORTANT:
 - Only return the JSON object described above, no other text
+- A message naming multiple people and their individual owed amounts is ONE
+  expense object, not one object per named person
 - Parse amounts carefully — "$45 split 3 ways" means amount=45, split_count=3, per_person=15
 - Handle various formats: "$45", "45 dollars", "€30", "30 EUR", etc.`;
 
