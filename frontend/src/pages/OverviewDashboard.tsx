@@ -71,28 +71,12 @@ export default function OverviewDashboard() {
   const hasMultiCurrency = data?.hasMultiCurrency || false;
 
   // SVG calculations for Donut
-  const size = 200;
-  const radius = 70;
-  const strokeWidth = 18;
-  const circumference = 2 * Math.PI * radius;
-
-  let accumulatedPercent = 0;
-  const donutSlices = categories.map((c) => {
-    const style = CATEGORY_STYLES[c.category] || CATEGORY_STYLES.other;
-    const strokeLength = (c.percentage / 100) * circumference;
-    const strokeOffset = circumference - strokeLength + (accumulatedPercent / 100) * circumference;
-    accumulatedPercent += c.percentage;
-
-    return {
-      category: c.category,
-      label: style.label,
-      color: style.color,
-      strokeLength,
-      strokeOffset,
-      total: c.total,
-      percentage: c.percentage,
-    };
-  });
+  const size = 220;               // viewBox size (px)
+  const stroke = 26;              // ring thickness
+  const r = (size - stroke) / 2;  // radius leaves room for the stroke
+  const cx = size / 2;
+  const cy = size / 2;
+  const C = 2 * Math.PI * r;      // circumference
 
   // Determine what is currently active in the center of the donut
   const activeLabel = hoveredCategory
@@ -146,37 +130,52 @@ export default function OverviewDashboard() {
               <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
                 {/* Donut Chart Container */}
                 <div className="md:col-span-5 flex flex-col items-center justify-center">
-                  <div className="relative w-[220px] h-[220px] flex items-center justify-center">
+                  <div className="relative w-[240px] h-[240px] flex items-center justify-center">
                     <svg
+                      viewBox={`0 0 ${size} ${size}`}
                       width={size}
                       height={size}
-                      className="-rotate-90 transform"
                     >
-                      <circle
-                        cx={size / 2}
-                        cy={size / 2}
-                        r={radius}
-                        fill="transparent"
-                        stroke="rgba(255, 255, 255, 0.05)"
-                        strokeWidth={strokeWidth}
-                      />
-                      {donutSlices.map((slice) => (
-                        <motion.circle
-                          key={slice.category}
-                          cx={size / 2}
-                          cy={size / 2}
-                          r={radius}
-                          fill="transparent"
-                          stroke={slice.color}
-                          strokeWidth={hoveredCategory === slice.category ? strokeWidth + 3 : strokeWidth}
-                          strokeDasharray={`${slice.strokeLength} ${circumference}`}
-                          strokeDashoffset={slice.strokeOffset}
-                          strokeLinecap="round"
-                          onMouseEnter={() => setHoveredCategory(slice.category)}
-                          onMouseLeave={() => setHoveredCategory(null)}
-                          className="transition-all duration-200 cursor-pointer"
+                      <g transform={`rotate(-90 ${cx} ${cy})`}>
+                        {/* faint background track */}
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r={r}
+                          fill="none"
+                          stroke="rgba(255, 255, 255, 0.08)"
+                          strokeWidth={stroke}
                         />
-                      ))}
+                        {(() => {
+                          let cumulative = 0;
+                          return categories.map((c) => {
+                            const style = CATEGORY_STYLES[c.category] || CATEGORY_STYLES.other;
+                            const frac = grandTotal > 0 ? c.total / grandTotal : 0;
+                            const segLen = frac * C;
+                            const dashArray = `${segLen} ${C - segLen}`;
+                            const dashOffset = -cumulative;
+                            cumulative += segLen;
+
+                            return (
+                              <motion.circle
+                                key={c.category}
+                                cx={cx}
+                                cy={cy}
+                                r={r}
+                                fill="none"
+                                stroke={style.color}
+                                strokeWidth={hoveredCategory === c.category ? stroke + 3 : stroke}
+                                strokeDasharray={dashArray}
+                                strokeDashoffset={dashOffset}
+                                strokeLinecap="butt"
+                                onMouseEnter={() => setHoveredCategory(c.category)}
+                                onMouseLeave={() => setHoveredCategory(null)}
+                                className="transition-all duration-200 cursor-pointer"
+                              />
+                            );
+                          });
+                        })()}
+                      </g>
                     </svg>
 
                     {/* Donut Center Display */}
