@@ -72,8 +72,10 @@ export default function OverviewDashboard() {
 
   // SVG calculations for Donut
   const size = 220;               // viewBox size (px)
-  const stroke = 26;              // ring thickness
-  const r = (size - stroke) / 2;  // radius leaves room for the stroke
+  const strokeWidth = 18;         // base ring thickness
+  const hoverGrow = 6;
+  const maxStroke = strokeWidth + hoverGrow;
+  const r = (size - maxStroke) / 2 - 4; // radius leaves room for the stroke + breathing room
   const cx = size / 2;
   const cy = size / 2;
   const C = 2 * Math.PI * r;      // circumference
@@ -135,6 +137,7 @@ export default function OverviewDashboard() {
                       viewBox={`0 0 ${size} ${size}`}
                       width={size}
                       height={size}
+                      style={{ overflow: 'visible' }}
                     >
                       <g transform={`rotate(-90 ${cx} ${cy})`}>
                         {/* faint background track */}
@@ -143,18 +146,19 @@ export default function OverviewDashboard() {
                           cy={cy}
                           r={r}
                           fill="none"
-                          stroke="rgba(255, 255, 255, 0.08)"
-                          strokeWidth={stroke}
+                          stroke="rgba(255, 255, 255, 0.06)"
+                          strokeWidth={strokeWidth}
                         />
                         {(() => {
                           let cumulative = 0;
-                          return categories.map((c) => {
+                          const gap = 3; // 3px gap between slices
+                          return categories.map((c, idx) => {
                             const style = CATEGORY_STYLES[c.category] || CATEGORY_STYLES.other;
                             const frac = grandTotal > 0 ? c.total / grandTotal : 0;
-                            const segLen = frac * C;
+                            const segLen = Math.max(0, frac * C - gap);
                             const dashArray = `${segLen} ${C - segLen}`;
                             const dashOffset = -cumulative;
-                            cumulative += segLen;
+                            cumulative += segLen + gap;
 
                             return (
                               <motion.circle
@@ -164,13 +168,17 @@ export default function OverviewDashboard() {
                                 r={r}
                                 fill="none"
                                 stroke={style.color}
-                                strokeWidth={hoveredCategory === c.category ? stroke + 3 : stroke}
-                                strokeDasharray={dashArray}
+                                initial={{ strokeDasharray: `0 ${C}` }}
+                                animate={{ strokeDasharray: dashArray }}
+                                transition={{ duration: 0.6, ease: 'easeOut', delay: idx * 0.05 }}
+                                strokeWidth={hoveredCategory === c.category ? strokeWidth + hoverGrow : strokeWidth}
                                 strokeDashoffset={dashOffset}
                                 strokeLinecap="butt"
                                 onMouseEnter={() => setHoveredCategory(c.category)}
                                 onMouseLeave={() => setHoveredCategory(null)}
-                                className="transition-all duration-200 cursor-pointer"
+                                style={{ transition: 'stroke-width 180ms ease, opacity 180ms' }}
+                                opacity={hoveredCategory ? (hoveredCategory === c.category ? 1 : 0.4) : 1}
+                                className="cursor-pointer"
                               />
                             );
                           });
