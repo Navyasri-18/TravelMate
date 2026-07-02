@@ -12,6 +12,7 @@ import './App.css';
 import JoinTripPage from './pages/JoinTripPage';
 import ProfilePage from './pages/ProfilePage';
 import ExpensesPage from './pages/ExpensesPage';
+import OverviewDashboard from './pages/OverviewDashboard';
 
 const queryClient = new QueryClient();
 
@@ -59,6 +60,10 @@ function App() {
           <Route 
             path="/profile" 
             element={isAuthenticated ? <ProfilePage /> : <Navigate to="/login" />} 
+          />
+          <Route 
+            path="/expenses" 
+            element={isAuthenticated ? <OverviewDashboard /> : <Navigate to="/login" />} 
           />
         </Routes>
         <Toaster position="top-center" richColors closeButton />
