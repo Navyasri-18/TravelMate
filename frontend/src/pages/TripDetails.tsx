@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, ChangeEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Users, Send, MessageCircle, AlertCircle, Loader2, Settings, UserPlus, LogOut, Paperclip, X, Image as ImageIcon, Trash2, Pencil, Reply as ReplyIcon, Receipt as ReceiptIcon } from 'lucide-react';
+import { ArrowLeft, Users, Send, MessageCircle, AlertCircle, Loader2, Settings, UserPlus, LogOut, Paperclip, X, Image as ImageIcon, Trash2, Pencil, Reply as ReplyIcon, Receipt as ReceiptIcon, Sparkles } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useTripChat } from '@/hooks/useTripChat';
 import { useSendMessage } from '@/hooks/useSendMessage';
@@ -49,6 +49,9 @@ const getInitials = (name: string | undefined): string => {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
+// The agent is a UI concept, not a trip member. Tagging it flips invoke_agent.
+const AGENT_MENTION = { kind: 'agent' as const, label: 'Agent Kai' };
+
 export default function TripDetails() {
   const { id } = useParams<{ id: string }>();
   const {
@@ -95,11 +98,25 @@ export default function TripDetails() {
   const [mentionIndex, setMentionIndex] = useState<number>(-1);
   const [activeSuggestIndex, setActiveSuggestIndex] = useState(0);
   const [splitError, setSplitError] = useState<string | null>(null);
+  const [mentions, setMentions] = useState<{ label: string; userId: string }[]>([]);
+  const [agentTagged, setAgentTagged] = useState(false);
 
   const filteredMembers = members.filter(m => {
     const name = m.profile?.name || '';
     return name.toLowerCase().includes((mentionSearch || '').toLowerCase());
   });
+
+  // Show the agent entry at the top of the dropdown when its label matches the
+  // current search (empty search shows it). It is a separate kind from members.
+  const search = (mentionSearch || '').toLowerCase();
+  const agentMatches = AGENT_MENTION.label.toLowerCase().includes(search);
+  type Suggestion =
+    | { kind: 'agent' }
+    | { kind: 'member'; member: typeof members[0] };
+  const suggestions: Suggestion[] = [
+    ...(mentionSearch !== null && agentMatches ? [{ kind: 'agent' as const }] : []),
+    ...filteredMembers.map((m) => ({ kind: 'member' as const, member: m })),
+  ];
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -135,11 +152,12 @@ export default function TripDetails() {
     const beforeAt = val.slice(0, mentionIndex);
     const afterCursor = val.slice(cursor);
     
-    // Format token: @[Name](id:user_id) 
-    const token = `@[${member.profile?.name || 'User'}](id:${member.user_id}) `;
+    const label = member.profile?.name || 'User';
+    const token = `@${label} `;            // clean, no id
     const newVal = beforeAt + token + afterCursor;
     
     setMessageText(newVal);
+    setMentions((prev) => [...prev, { label, userId: member.user_id }]);
     setMentionSearch(null);
     setMentionIndex(-1);
     
@@ -153,17 +171,46 @@ export default function TripDetails() {
     }, 0);
   };
 
+  const handleSelectAgent = () => {
+    if (mentionIndex === -1 || !inputRef.current) return;
+    const val = messageText;
+    const cursor = inputRef.current.selectionStart || 0;
+    const beforeAt = val.slice(0, mentionIndex);
+    const afterCursor = val.slice(cursor);
+    const token = `@${AGENT_MENTION.label} `; // "@Agent Kai "
+    const newVal = beforeAt + token + afterCursor;
+
+    setMessageText(newVal);
+    setAgentTagged(true);        // invoke signal — NOT a share, NOT pushed to mentions
+    setMentionSearch(null);
+    setMentionIndex(-1);
+
+    const newCursorPos = mentionIndex + token.length;
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 0);
+  };
+
+  // Dispatch a suggestion pick to the right handler
+  const handlePickSuggestion = (s: Suggestion) => {
+    if (s.kind === 'agent') handleSelectAgent();
+    else handleSelectMember(s.member);
+  };
+
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (mentionSearch !== null && filteredMembers.length > 0) {
+    if (mentionSearch !== null && suggestions.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setActiveSuggestIndex(prev => (prev + 1) % filteredMembers.length);
+        setActiveSuggestIndex((prev) => (prev + 1) % suggestions.length);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setActiveSuggestIndex(prev => (prev - 1 + filteredMembers.length) % filteredMembers.length);
+        setActiveSuggestIndex((prev) => (prev - 1 + suggestions.length) % suggestions.length);
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        handleSelectMember(filteredMembers[activeSuggestIndex]);
+        handlePickSuggestion(suggestions[activeSuggestIndex]);
       } else if (e.key === 'Escape') {
         e.preventDefault();
         setMentionSearch(null);
@@ -370,81 +417,101 @@ export default function TripDetails() {
     if (sendMutation.isPending || uploadMutation.isPending) return;
     if (!currentUserId || !id) return;
     
-    // Parse and validate custom splits
-    const mentionRegex = /@\[([^\]]+)\]\(id:([^)]+)\)\s*(\d+(?:\.\d+)?)/g;
-    const matches = [...trimmed.matchAll(mentionRegex)];
+    // Parse and validate custom splits using the mentions state array
     let shares: { user_id: string; amount: number }[] | null = null;
     
-    if (matches.length > 0) {
-      const cleanContent = trimmed.replace(/@\[[^\]]+\]\(id:[^)]+\)\s*\d+(?:\.\d+)?/g, '');
-      const totalMatch = cleanContent.match(/\b\d+(?:\.\d+)?\b/);
-      if (!totalMatch) {
-        setSplitError("Could not detect the total expense amount. Please include the total amount (e.g. 4000).");
-        return;
-      }
-      
-      const total = Math.round(parseFloat(totalMatch[0]) * 100) / 100;
+    if (mentions.length > 0) {
       const memberIds = new Set(members.map(m => m.user_id));
-      let namedSum = 0;
       const namedShares: { user_id: string; amount: number }[] = [];
+      let currentCursor = 0;
+      let namedSum = 0;
       let payerExplicitlyMentioned = false;
       
-      const CURRENCY_SYMBOLS: Record<string, string> = {
-        INR: '₹',
-        USD: '$',
-        EUR: '€',
-        GBP: '£',
-        JPY: '¥',
-      };
-      const tripCurrency = trip?.currency || 'INR';
-      const currencySymbol = CURRENCY_SYMBOLS[tripCurrency] || tripCurrency;
-      
-      for (const match of matches) {
-        const name = match[1];
-        const userId = match[2];
-        const amount = Math.round(parseFloat(match[3]) * 100) / 100;
+      // Strip matched "@Name amount" segments from content to find the standalone total
+      let cleanContent = trimmed;
+
+      for (const mention of mentions) {
+        const escapedLabel = mention.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Match @Label followed by optional whitespace and a number (integer or float)
+        const regex = new RegExp(`@${escapedLabel}\\s*(\\d+(?:\\.\\d+)?)`, 'i');
+        const searchSubstring = trimmed.slice(currentCursor);
+        const match = searchSubstring.match(regex);
         
-        if (!memberIds.has(userId)) {
-          setSplitError(`${name} isn't a member of this trip.`);
+        if (match && match.index !== undefined) {
+          const amount = Math.round(parseFloat(match[1]) * 100) / 100;
+          namedShares.push({ user_id: mention.userId, amount });
+          
+          if (mention.userId === currentUserId) {
+            payerExplicitlyMentioned = true;
+          }
+          
+          namedSum += amount;
+          
+          // Advance search cursor past this match
+          currentCursor += match.index + match[0].length;
+          
+          // Strip this match from cleanContent to prevent total confusion
+          cleanContent = cleanContent.replace(match[0], '');
+        }
+      }
+
+      if (namedShares.length > 0) {
+        const totalMatch = cleanContent.match(/\b\d+(?:\.\d+)?\b/);
+        if (!totalMatch) {
+          setSplitError("Could not detect the total expense amount. Please include the total amount (e.g. 4000).");
           return;
         }
         
-        if (amount < 0) {
-          setSplitError("Split amounts can't be negative.");
-          return;
+        const total = Math.round(parseFloat(totalMatch[0]) * 100) / 100;
+        const CURRENCY_SYMBOLS: Record<string, string> = {
+          INR: '₹',
+          USD: '$',
+          EUR: '€',
+          GBP: '£',
+          JPY: '¥',
+        };
+        const tripCurrency = trip?.currency || 'INR';
+        const currencySymbol = CURRENCY_SYMBOLS[tripCurrency] || tripCurrency;
+        
+        for (const ns of namedShares) {
+          const member = members.find(m => m.user_id === ns.user_id);
+          const name = member?.profile?.name || 'User';
+          
+          if (!memberIds.has(ns.user_id)) {
+            setSplitError(`${name} isn't a member of this trip.`);
+            return;
+          }
+          
+          if (ns.amount < 0) {
+            setSplitError("Split amounts can't be negative.");
+            return;
+          }
         }
         
-        if (userId === currentUserId) {
-          payerExplicitlyMentioned = true;
-        }
+        namedSum = Math.round(namedSum * 100) / 100;
         
-        namedShares.push({ user_id: userId, amount });
-        namedSum += amount;
-      }
-      
-      namedSum = Math.round(namedSum * 100) / 100;
-      
-      if (namedSum > total) {
-        setSplitError(`Split adds up to ${currencySymbol}${namedSum}, but the expense is ${currencySymbol}${total}.`);
-        return;
-      }
-      
-      const payerShare = Math.round((total - namedSum) * 100) / 100;
-      
-      if (payerExplicitlyMentioned) {
-        if (Math.abs(namedSum - total) > 0.01) {
+        if (namedSum > total) {
           setSplitError(`Split adds up to ${currencySymbol}${namedSum}, but the expense is ${currencySymbol}${total}.`);
           return;
         }
-        shares = namedShares;
-      } else {
-        if (payerShare < 0) {
-          setSplitError(`Split adds up to ${currencySymbol}${namedSum}, but the expense is ${currencySymbol}${total}.`);
-          return;
-        }
-        shares = [...namedShares];
-        if (payerShare > 0) {
-          shares.push({ user_id: currentUserId, amount: payerShare });
+        
+        const payerShare = Math.round((total - namedSum) * 100) / 100;
+        
+        if (payerExplicitlyMentioned) {
+          if (Math.abs(namedSum - total) > 0.01) {
+            setSplitError(`Split adds up to ${currencySymbol}${namedSum}, but the expense is ${currencySymbol}${total}.`);
+            return;
+          }
+          shares = namedShares;
+        } else {
+          if (payerShare < 0) {
+            setSplitError(`Split adds up to ${currencySymbol}${namedSum}, but the expense is ${currencySymbol}${total}.`);
+            return;
+          }
+          shares = [...namedShares];
+          if (payerShare > 0) {
+            shares.push({ user_id: currentUserId, amount: payerShare });
+          }
         }
       }
     }
@@ -453,12 +520,15 @@ export default function TripDetails() {
     const textToSend = trimmed;
     const fileToSend = selectedFile;
     const replyTo = replyingToId; // capture before clearing
+    const invokeAgentToSend = agentTagged;
     
     // Clear inputs IMMEDIATELY for snappy UX
     setMessageText('');
     setSelectedFile(null);
     setReplyingToId(null); // clear reply banner on send
     setSplitError(null);
+    setMentions([]);
+    setAgentTagged(false);
     inputRef.current?.focus();
     
     try {
@@ -477,12 +547,14 @@ export default function TripDetails() {
         senderProfile: currentUserProfile,
         replyToMessageId: replyTo,
         shares,
+        invokeAgent: invokeAgentToSend,
       });
     } catch (err) {
       // Restore the inputs so the user can retry
       setMessageText(textToSend);
       setSelectedFile(fileToSend);
       setReplyingToId(replyTo);
+      setAgentTagged(invokeAgentToSend);
     }
   };
   
@@ -780,25 +852,37 @@ export default function TripDetails() {
             "focus-within:border-[#a98467]/50 focus-within:shadow-[0_0_25px_rgba(169,132,103,0.25)] focus-within:bg-[#a98467]/5"
           )}>
             {/* Autocomplete Dropdown */}
-            {mentionSearch !== null && filteredMembers.length > 0 && (
+            {mentionSearch !== null && suggestions.length > 0 && (
               <div className="absolute bottom-full mb-2 left-0 right-0 max-h-48 overflow-y-auto bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-xl z-50 py-1.5 flex flex-col chat-scrollbar">
-                {filteredMembers.map((m, idx) => (
+                {suggestions.map((s, idx) => (
                   <button
-                    key={m.user_id}
+                    key={s.kind === 'agent' ? 'agent-kai' : s.member.user_id}
                     type="button"
-                    onClick={() => handleSelectMember(m)}
+                    onClick={() => handlePickSuggestion(s)}
                     className={cn(
                       "w-full px-4 py-2 flex items-center gap-2 text-left text-sm text-[#f5f5f5] hover:bg-white/5 transition-colors cursor-pointer",
                       idx === activeSuggestIndex && "bg-white/10"
                     )}
                   >
-                    <Avatar
-                      avatarUrl={m.profile?.avatar_url || undefined}
-                      name={m.profile?.name || 'User'}
-                      size="xs"
-                      className="shrink-0"
-                    />
-                    <span className="truncate">{m.profile?.name || 'User'}</span>
+                    {s.kind === 'agent' ? (
+                      <>
+                        <span className="w-6 h-6 rounded-full bg-[#a98467]/20 border border-[#a98467]/40 flex items-center justify-center shrink-0">
+                          <Sparkles className="h-3 w-3 text-[#a98467]" />
+                        </span>
+                        <span className="truncate font-semibold">{AGENT_MENTION.label}</span>
+                        <span className="ml-auto text-[10px] uppercase tracking-wider text-[#a98467]/80">Log expense</span>
+                      </>
+                    ) : (
+                      <>
+                        <Avatar
+                          avatarUrl={s.member.profile?.avatar_url || undefined}
+                          name={s.member.profile?.name || 'User'}
+                          size="xs"
+                          className="shrink-0"
+                        />
+                        <span className="truncate">{s.member.profile?.name || 'User'}</span>
+                      </>
+                    )}
                   </button>
                 ))}
               </div>

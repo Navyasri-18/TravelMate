@@ -15,6 +15,7 @@ interface SendMessageVariables {
   senderProfile?: MessageSenderProfile | null;
   replyToMessageId?: string | null;
   shares?: { user_id: string; amount: number }[] | null;
+  invokeAgent?: boolean;
 }
 
 interface MutationContext {
@@ -34,6 +35,7 @@ export const useSendMessage = ({ tripId, senderId }: UseSendMessageInput) => {
         attachmentUrl: variables.attachmentUrl,
         replyToMessageId: variables.replyToMessageId,
         shares: variables.shares,
+        invokeAgent: variables.invokeAgent,
       }),
     
     onMutate: async (variables): Promise<MutationContext> => {
