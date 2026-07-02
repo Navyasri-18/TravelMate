@@ -22,37 +22,26 @@ import { supabase } from "../../config/supabaseClient.js";
  * System prompt for the AI expense extractor.
  * Instructs the model to return structured JSON from natural language.
  */
-const EXTRACTION_SYSTEM_PROMPT = `You are an expense extraction assistant for a travel app.
-Given a chat message, extract any expense or cost information mentioned.
+const EXTRACTION_SYSTEM_PROMPT = `You are an expense extraction assistant for a travel group app.
+Every message you receive has been explicitly tagged by a user intending to log an expense — you do not need to judge whether it is an expense, it always is.
 
-IMPORTANT — single transaction vs multiple expenses:
-A message describing ONE payment with amounts attributed to specific people
-(e.g. "I paid 4500 for food, @Ayemen owes 2300, @Tej owes 1200") describes
-ONE transaction with a breakdown of who owes what — NOT three separate
-expenses. In this case, return exactly ONE expense object representing the
-total payment, and do not create separate line items for each named amount.
-Only return multiple expense objects if the message genuinely describes
-multiple distinct purchases (e.g. "paid 500 for lunch and 200 for a taxi").
+Your job:
+- Extract the expense description, total amount, and category from the message.
+- The "amount" field must always be the TOTAL transaction amount — if the message names specific people and their individual amounts (e.g. "@Ayemen owes 2300, @Tej owes 700"), the total is the sum of all named amounts (3000), not any single person's share.
+- A message naming multiple people with individual amounts describes ONE transaction, not multiple separate expenses. Return exactly ONE expense object in this case.
+- Only return multiple expense objects if the message genuinely describes multiple distinct purchases (e.g. "500 for lunch and 200 for a taxi").
 
 Return a JSON object with a single key "expenses" whose value is an array of expense objects.
-Each expense object should have:
-- "description": short description of the expense (string)
-- "amount": the TOTAL amount of the transaction in numbers only (number) — if the
-  message names specific people and amounts, this should be the sum of those
-  amounts, not any single named amount
-- "currency": the currency code, default "USD" if not specified (string)
+Each expense object must have:
+- "description": short label for what the expense was (string)
+- "amount": the TOTAL amount as a number only (number)
+- "currency": currency code — default "USD" if not specified (string)
 - "category": one of "food", "transport", "accommodation", "activities", "shopping", "other" (string)
-- "split_count": number of people splitting, if mentioned (number or null)
-- "per_person": amount per person if split is mentioned (number or null)
+- "split_count": number of people splitting if mentioned (number or null)
+- "per_person": per-person amount if directly stated (number or null)
 
-If no expenses are found in the message, return: {"expenses": []}
-
-IMPORTANT:
-- Only return the JSON object described above, no other text
-- A message naming multiple people and their individual owed amounts is ONE
-  expense object, not one object per named person
-- Parse amounts carefully — "$45 split 3 ways" means amount=45, split_count=3, per_person=15
-- Handle various formats: "$45", "45 dollars", "€30", "30 EUR", etc.`;
+If somehow no expense can be extracted, return: {"expenses": []}
+Return only the JSON object — no extra text.`;
 
 const expenseExtractionFunction = inngest.createFunction(
   {
@@ -63,6 +52,9 @@ const expenseExtractionFunction = inngest.createFunction(
   { event: "app/expense.extraction.triggered" },
   async ({ event, step }) => {
     const { trip_id, message_id, message_content, shares } = event.data;
+    const cleanedContent = message_content
+      .replace(/@Agent\s+\w+\s*/i, '')
+      .trim();
 
     console.log(
       `[Expense Extraction] Processing message ${message_id} for trip ${trip_id}`,
@@ -84,7 +76,7 @@ const expenseExtractionFunction = inngest.createFunction(
           model: GROQ_MODEL,
           messages: [
             { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
-            { role: "user", content: message_content },
+            { role: "user", content: cleanedContent },
           ],
           temperature: 0.1, // Low temp for structured output
           max_tokens: 1024,
